@@ -64,6 +64,14 @@ static void parse_tablegen_imports(CBMExtractCtx *ctx);
 static void parse_crystal_imports(CBMExtractCtx *ctx);
 static void parse_fsharp_imports(CBMExtractCtx *ctx);
 static void parse_ada_imports(CBMExtractCtx *ctx);
+static void parse_elm_imports(CBMExtractCtx *ctx);
+static void parse_move_imports(CBMExtractCtx *ctx);
+static void parse_smali_imports(CBMExtractCtx *ctx);
+static void parse_tlaplus_imports(CBMExtractCtx *ctx);
+static void parse_vhdl_imports(CBMExtractCtx *ctx);
+static void parse_wit_imports(CBMExtractCtx *ctx);
+static void parse_smithy_imports(CBMExtractCtx *ctx);
+static void parse_hyprlang_imports(CBMExtractCtx *ctx);
 
 // Helper: strip quotes from a string literal
 static char *strip_quotes(CBMArena *a, const char *s) {
@@ -1657,37 +1665,134 @@ static void lisp_push_module(CBMExtractCtx *ctx, TSNode mod_node) {
     }
 }
 
-static void parse_lisp_imports(CBMExtractCtx *ctx) {
+/* Strip a leading ':' from a lisp keyword/symbol token (Clojure/Fennel/CL
+ * package keywords carry it: `:util` → `util`).  Returns an arena copy. */
+static char *lisp_strip_kw(CBMArena *a, const char *s) {
+    if (!s) {
+        return NULL;
+    }
+    if (s[0] == ':') {
+        s++;
+    }
+    return cbm_arena_strdup(a, s);
+}
+
+/* Record the file's declared namespace/package so the pipeline namespace map
+ * can resolve `(:require ns)` / `(:use :pkg)` to the declaring file.  First
+ * declaration wins (mirrors capture_namespace_decl). */
+static void lisp_set_namespace(CBMExtractCtx *ctx, TSNode name_node) {
     CBMArena *a = ctx->arena;
-    TSTreeCursor cursor = ts_tree_cursor_new(ctx->root);
-    if (!ts_tree_cursor_goto_first_child(&cursor)) {
-        ts_tree_cursor_delete(&cursor);
+    char *ns = lisp_strip_kw(a, cbm_node_text(a, name_node, ctx->source));
+    if (ns && ns[0] && !ctx->result->namespace_name) {
+        ctx->result->namespace_name = ns;
+    }
+}
+
+/* Clojure `(ns app.core (:require [app.util :as u]) (:use app.io))` and Common
+ * Lisp `(defpackage :main (:use :cl :util))` carry their dependency list inside
+ * nested keyword clauses (`:require`/`:use`/`:import`).  Walk such a clause and
+ * push each referenced module/package as an import.  `clause` is the
+ * `(:require ...)` / `(:use ...)` list. */
+static void lisp_push_clause_modules(CBMExtractCtx *ctx, TSNode clause) {
+    uint32_t cc = ts_node_named_child_count(clause);
+    for (uint32_t j = 1; j < cc; j++) { /* skip the leading keyword head */
+        TSNode item = ts_node_named_child(clause, j);
+        const char *ik = ts_node_type(item);
+        /* `[app.util :as u]` — the module is the vector's first symbol. */
+        if (strcmp(ik, "vec_lit") == 0 || strcmp(ik, "list_lit") == 0 ||
+            strcmp(ik, "list") == 0) {
+            uint32_t vc = ts_node_named_child_count(item);
+            if (vc > 0) {
+                lisp_push_module(ctx, ts_node_named_child(item, 0));
+            }
+        } else {
+            /* bare symbol/keyword: `:util`, `app.io`. */
+            lisp_push_module(ctx, item);
+        }
+    }
+}
+
+/* The s-expression head symbol text, or NULL if the list has no symbol head. */
+static char *lisp_head_text(CBMExtractCtx *ctx, TSNode list, TSNode *out_head) {
+    if (ts_node_named_child_count(list) < 1) {
+        return NULL;
+    }
+    TSNode head = ts_node_named_child(list, 0);
+    const char *ht = ts_node_type(head);
+    if (strcmp(ht, "symbol") != 0 && strcmp(ht, "sym_lit") != 0) {
+        return NULL;
+    }
+    if (out_head) {
+        *out_head = head;
+    }
+    return cbm_node_text(ctx->arena, head, ctx->source);
+}
+
+/* Process one s-expression list as a potential import/namespace form. */
+static void lisp_process_list(CBMExtractCtx *ctx, TSNode node) {
+    CBMArena *a = ctx->arena;
+    (void)a;
+    TSNode head = node;
+    char *hn = lisp_head_text(ctx, node, &head);
+    if (!hn) {
         return;
     }
-    do {
-        TSNode node = ts_tree_cursor_current_node(&cursor);
-        const char *nt = ts_node_type(node);
-        /* Different lisp grammars name the s-expression list node differently:
-         * Scheme/Racket/CL/elisp use "list"; Clojure uses "list_lit". */
-        if (strcmp(nt, "list") != 0 && strcmp(nt, "list_lit") != 0) {
-            continue;
+    uint32_t nc = ts_node_named_child_count(node);
+
+    /* Clojure namespace form: `(ns app.core (:require ...) (:use ...))`.
+     * 2nd child is the namespace symbol; later keyword-headed lists are
+     * dependency clauses. */
+    if (strcmp(hn, "ns") == 0 && nc >= 2) {
+        lisp_set_namespace(ctx, ts_node_named_child(node, 1));
+        for (uint32_t j = 2; j < nc; j++) {
+            TSNode clause = ts_node_named_child(node, j);
+            const char *ck = ts_node_type(clause);
+            if (strcmp(ck, "list_lit") == 0 || strcmp(ck, "list") == 0) {
+                lisp_push_clause_modules(ctx, clause);
+            }
         }
-        uint32_t nc = ts_node_named_child_count(node);
-        if (nc < 1) {
-            continue;
+        return;
+    }
+
+    /* Common Lisp package form: `(defpackage :main (:use :cl :util) ...)`.
+     * 2nd child is the package name keyword; nested `(:use ...)` lists name the
+     * imported packages. */
+    if (strcmp(hn, "defpackage") == 0 && nc >= 2) {
+        lisp_set_namespace(ctx, ts_node_named_child(node, 1));
+        for (uint32_t j = 2; j < nc; j++) {
+            TSNode clause = ts_node_named_child(node, j);
+            const char *ck = ts_node_type(clause);
+            if (strcmp(ck, "list_lit") != 0 && strcmp(ck, "list") != 0) {
+                continue;
+            }
+            /* Only `:use` / `:import-from` clauses denote dependencies. */
+            char *chn = lisp_head_text(ctx, clause, NULL);
+            if (chn && (strcmp(chn, ":use") == 0 || strstr(chn, "import-from"))) {
+                lisp_push_clause_modules(ctx, clause);
+            } else if (ts_node_named_child_count(clause) > 0) {
+                TSNode ch0 = ts_node_named_child(clause, 0);
+                const char *c0k = ts_node_type(ch0);
+                /* CL `(:use ...)` head is a `kwd_lit`, not a symbol. */
+                if (strcmp(c0k, "kwd_lit") == 0) {
+                    char *kw = cbm_node_text(ctx->arena, ch0, ctx->source);
+                    if (kw && (strstr(kw, "use") || strstr(kw, "import-from"))) {
+                        lisp_push_clause_modules(ctx, clause);
+                    }
+                }
+            }
         }
-        TSNode head = ts_node_named_child(node, 0);
-        const char *ht = ts_node_type(head);
-        /* Clojure tokenizes the head symbol as "sym_lit"; others as "symbol". */
-        if (strcmp(ht, "symbol") != 0 && strcmp(ht, "sym_lit") != 0) {
-            continue;
-        }
-        char *hn = cbm_node_text(a, head, ctx->source);
-        if (!hn || (strcmp(hn, "import") != 0 && strcmp(hn, "require") != 0 &&
-                    strcmp(hn, "load") != 0 && strcmp(hn, "use") != 0 &&
-                    strcmp(hn, "include") != 0)) {
-            continue;
-        }
+        return;
+    }
+
+    /* Common Lisp `(in-package :util)` also declares the file's package. */
+    if (strcmp(hn, "in-package") == 0 && nc >= 2) {
+        lisp_set_namespace(ctx, ts_node_named_child(node, 1));
+        return;
+    }
+
+    /* Plain import head: `(require :util)`, `(import ...)`, `(use ...)`. */
+    if (strcmp(hn, "import") == 0 || strcmp(hn, "require") == 0 || strcmp(hn, "load") == 0 ||
+        strcmp(hn, "use") == 0 || strcmp(hn, "include") == 0) {
         for (uint32_t j = 1; j < nc; j++) {
             TSNode mod_node = ts_node_named_child(node, j);
             const char *mk = ts_node_type(mod_node);
@@ -1699,8 +1804,25 @@ static void parse_lisp_imports(CBMExtractCtx *ctx) {
                 lisp_push_module(ctx, mod_node);
             }
         }
-    } while (ts_tree_cursor_goto_next_sibling(&cursor));
-    ts_tree_cursor_delete(&cursor);
+    }
+}
+
+/* Recursively walk lisp lists.  Fennel binds requires inside other forms
+ * (`(local util (require :util))`), so we must descend into every list, not
+ * just root children. */
+static void lisp_walk(CBMExtractCtx *ctx, TSNode node) { // NOLINT(misc-no-recursion)
+    const char *nt = ts_node_type(node);
+    if (strcmp(nt, "list") == 0 || strcmp(nt, "list_lit") == 0) {
+        lisp_process_list(ctx, node);
+    }
+    uint32_t cc = ts_node_named_child_count(node);
+    for (uint32_t i = 0; i < cc; i++) {
+        lisp_walk(ctx, ts_node_named_child(node, i));
+    }
+}
+
+static void parse_lisp_imports(CBMExtractCtx *ctx) {
+    lisp_walk(ctx, ctx->root);
 }
 
 // --- Starlark imports ---
@@ -2346,6 +2468,271 @@ static void parse_ada_imports(CBMExtractCtx *ctx) {
     }
 }
 
+// --- Elm imports: `import Module.Path [as X] [exposing (..)]` ---
+// AST: file -> import_clause(moduleName: upper_case_qid). The module path maps
+// to a sibling file (`import Utils` -> Utils.elm), resolved by the pipeline's
+// sibling-file resolver.
+static void parse_elm_imports(CBMExtractCtx *ctx) {
+    CBMArena *a = ctx->arena;
+    TSNodeStack stack;
+    ts_nstack_init(&stack, a, CBM_SZ_512);
+    ts_nstack_push(&stack, a, ctx->root);
+    while (stack.count > 0) {
+        TSNode node = ts_nstack_pop(&stack);
+        if (strcmp(ts_node_type(node), "import_clause") == 0) {
+            TSNode name = node;
+            if (find_first_descendant_of(node, "upper_case_qid", &name)) {
+                char *mod = cbm_node_text(a, name, ctx->source);
+                if (mod && mod[0]) {
+                    /* Elm module dots map to directory separators on disk
+                     * (Math.Util -> Math/Util.elm); '.'-> '/' so the sibling
+                     * resolver builds the right path. */
+                    for (char *p = mod; *p; p++) {
+                        if (*p == '.') {
+                            *p = '/';
+                        }
+                    }
+                    CBMImport imp = {.local_name = path_last(a, mod), .module_path = mod};
+                    cbm_imports_push(&ctx->result->imports, a, imp);
+                }
+            }
+            continue;
+        }
+        ts_nstack_push_children(&stack, a, node);
+    }
+}
+
+// --- Move imports: `use 0xADDR::module [::member];` ---
+// AST: use_declaration with `argument: identifier` = the module name. The
+// leading hex address parses as an error node but the module identifier is
+// captured cleanly via the `argument` field. Resolves to a sibling file.
+static void parse_move_imports(CBMExtractCtx *ctx) {
+    CBMArena *a = ctx->arena;
+    TSNodeStack stack;
+    ts_nstack_init(&stack, a, CBM_SZ_512);
+    ts_nstack_push(&stack, a, ctx->root);
+    while (stack.count > 0) {
+        TSNode node = ts_nstack_pop(&stack);
+        if (strcmp(ts_node_type(node), "use_declaration") == 0) {
+            TSNode arg = ts_node_child_by_field_name(node, TS_FIELD("argument"));
+            char *mod = NULL;
+            if (!ts_node_is_null(arg)) {
+                mod = cbm_node_text(a, arg, ctx->source);
+            } else if (find_first_descendant_of(node, "identifier", &arg)) {
+                mod = cbm_node_text(a, arg, ctx->source);
+            }
+            if (mod && mod[0]) {
+                CBMImport imp = {.local_name = path_last(a, mod), .module_path = mod};
+                cbm_imports_push(&ctx->result->imports, a, imp);
+            }
+            continue;
+        }
+        ts_nstack_push_children(&stack, a, node);
+    }
+}
+
+// --- Smali imports: `.super Lpkg/Name;` / `.implements Lpkg/Iface;` ---
+// AST: super_directive / implements_directive -> class_identifier holding a JVM
+// type descriptor `Lpkg/Name;`. Demangle the descriptor (drop leading 'L',
+// trailing ';', '/'->'.') so the bare class name resolves to its sibling file.
+static char *smali_demangle_descriptor(CBMArena *a, const char *desc) {
+    if (!desc || !desc[0]) {
+        return NULL;
+    }
+    const char *start = desc;
+    if (start[0] == 'L') {
+        start++;
+    }
+    size_t len = strlen(start);
+    if (len > 0 && start[len - 1] == ';') {
+        len--;
+    }
+    char *out = cbm_arena_strndup(a, start, len);
+    if (out) {
+        for (char *p = out; *p; p++) {
+            if (*p == '/') {
+                *p = '.';
+            }
+        }
+    }
+    return out;
+}
+
+static void parse_smali_imports(CBMExtractCtx *ctx) {
+    CBMArena *a = ctx->arena;
+    TSNodeStack stack;
+    ts_nstack_init(&stack, a, CBM_SZ_512);
+    ts_nstack_push(&stack, a, ctx->root);
+    while (stack.count > 0) {
+        TSNode node = ts_nstack_pop(&stack);
+        const char *k = ts_node_type(node);
+        if (strcmp(k, "super_directive") == 0 || strcmp(k, "implements_directive") == 0) {
+            TSNode cid = node;
+            if (find_first_descendant_of(node, "class_identifier", &cid)) {
+                char *mod = smali_demangle_descriptor(a, cbm_node_text(a, cid, ctx->source));
+                if (mod && mod[0]) {
+                    CBMImport imp = {.local_name = path_last(a, mod), .module_path = mod};
+                    cbm_imports_push(&ctx->result->imports, a, imp);
+                }
+            }
+            continue;
+        }
+        ts_nstack_push_children(&stack, a, node);
+    }
+}
+
+// --- TLA+ imports: `EXTENDS Foo, Bar` / `INSTANCE Foo` ---
+// AST: extends -> identifier_ref* (one per extended module). Each module maps
+// to a sibling `Foo.tla` file.
+static void parse_tlaplus_imports(CBMExtractCtx *ctx) {
+    CBMArena *a = ctx->arena;
+    TSNodeStack stack;
+    ts_nstack_init(&stack, a, CBM_SZ_512);
+    ts_nstack_push(&stack, a, ctx->root);
+    while (stack.count > 0) {
+        TSNode node = ts_nstack_pop(&stack);
+        const char *k = ts_node_type(node);
+        if (strcmp(k, "extends") == 0 || strcmp(k, "instance") == 0) {
+            uint32_t nc = ts_node_named_child_count(node);
+            for (uint32_t j = 0; j < nc; j++) {
+                TSNode c = ts_node_named_child(node, j);
+                const char *ck = ts_node_type(c);
+                if (strcmp(ck, "identifier_ref") == 0 || strcmp(ck, "identifier") == 0) {
+                    char *mod = cbm_node_text(a, c, ctx->source);
+                    if (mod && mod[0]) {
+                        CBMImport imp = {.local_name = path_last(a, mod), .module_path = mod};
+                        cbm_imports_push(&ctx->result->imports, a, imp);
+                    }
+                }
+            }
+            continue;
+        }
+        ts_nstack_push_children(&stack, a, node);
+    }
+}
+
+// --- VHDL imports: `use work.pkg.all;` ---
+// AST: use_clause -> selected_name(library:, package:, ...). The `package`
+// field names the imported package, which maps to a sibling file (math_pkg ->
+// math_pkg.vhd) declaring `package math_pkg`. `library_clause` (`library work;`)
+// names no file and is skipped.
+static void parse_vhdl_imports(CBMExtractCtx *ctx) {
+    CBMArena *a = ctx->arena;
+    TSNodeStack stack;
+    ts_nstack_init(&stack, a, CBM_SZ_512);
+    ts_nstack_push(&stack, a, ctx->root);
+    while (stack.count > 0) {
+        TSNode node = ts_nstack_pop(&stack);
+        if (strcmp(ts_node_type(node), "use_clause") == 0) {
+            TSNode sel = node;
+            if (find_first_descendant_of(node, "selected_name", &sel)) {
+                TSNode pkg = ts_node_child_by_field_name(sel, TS_FIELD("package"));
+                char *mod = NULL;
+                if (!ts_node_is_null(pkg)) {
+                    mod = cbm_node_text(a, pkg, ctx->source);
+                }
+                if (mod && mod[0]) {
+                    CBMImport imp = {.local_name = path_last(a, mod), .module_path = mod};
+                    cbm_imports_push(&ctx->result->imports, a, imp);
+                }
+            }
+            continue;
+        }
+        ts_nstack_push_children(&stack, a, node);
+    }
+}
+
+// --- WIT imports: `use types.{point};` / `use pkg/iface;` ---
+// AST: use_item -> use_path(id...). The leading path segment names the imported
+// interface/package, mapping to a sibling `types.wit` file.
+static void parse_wit_imports(CBMExtractCtx *ctx) {
+    CBMArena *a = ctx->arena;
+    TSNodeStack stack;
+    ts_nstack_init(&stack, a, CBM_SZ_512);
+    ts_nstack_push(&stack, a, ctx->root);
+    while (stack.count > 0) {
+        TSNode node = ts_nstack_pop(&stack);
+        if (strcmp(ts_node_type(node), "use_item") == 0) {
+            TSNode path = node;
+            if (find_first_descendant_of(node, "use_path", &path)) {
+                /* First `id` child of the path is the interface/package name. */
+                TSNode idn = path;
+                if (find_first_descendant_of(path, "id", &idn)) {
+                    char *mod = cbm_node_text(a, idn, ctx->source);
+                    if (mod && mod[0]) {
+                        CBMImport imp = {.local_name = path_last(a, mod), .module_path = mod};
+                        cbm_imports_push(&ctx->result->imports, a, imp);
+                    }
+                }
+            }
+            continue;
+        }
+        ts_nstack_push_children(&stack, a, node);
+    }
+}
+
+// --- Smithy imports: `use com.example.common#Shape` ---
+// AST: use_statement -> absolute_root_shape_id(namespace, identifier). Emit a
+// dotted path `<namespace>.<Shape>` so the pipeline's symbol-name fallback links
+// it to the declaring shape (a Class/Struct node) in the namespace's file.
+static void parse_smithy_imports(CBMExtractCtx *ctx) {
+    CBMArena *a = ctx->arena;
+    TSNodeStack stack;
+    ts_nstack_init(&stack, a, CBM_SZ_512);
+    ts_nstack_push(&stack, a, ctx->root);
+    while (stack.count > 0) {
+        TSNode node = ts_nstack_pop(&stack);
+        if (strcmp(ts_node_type(node), "use_statement") == 0) {
+            TSNode sid = node;
+            if (find_first_descendant_of(node, "absolute_root_shape_id", &sid) ||
+                find_first_descendant_of(node, "shape_id", &sid)) {
+                char *mod = cbm_node_text(a, sid, ctx->source);
+                if (mod && mod[0]) {
+                    /* `com.example.common#Timestamp` -> dotted path so the last
+                     * segment (Timestamp) resolves to the declaring shape. */
+                    for (char *p = mod; *p; p++) {
+                        if (*p == '#') {
+                            *p = '.';
+                        }
+                    }
+                    CBMImport imp = {.local_name = path_last(a, mod), .module_path = mod};
+                    cbm_imports_push(&ctx->result->imports, a, imp);
+                }
+            }
+            continue;
+        }
+        ts_nstack_push_children(&stack, a, node);
+    }
+}
+
+// --- Hyprlang imports: `source = ~/path/to/file.conf` ---
+// AST: source -> string. Emit the referenced path; the pipeline's sibling-file
+// resolver matches it (by full path, then by basename) to the included file.
+static void parse_hyprlang_imports(CBMExtractCtx *ctx) {
+    CBMArena *a = ctx->arena;
+    TSNodeStack stack;
+    ts_nstack_init(&stack, a, CBM_SZ_512);
+    ts_nstack_push(&stack, a, ctx->root);
+    while (stack.count > 0) {
+        TSNode node = ts_nstack_pop(&stack);
+        if (strcmp(ts_node_type(node), "source") == 0) {
+            TSNode str = node;
+            char *path = NULL;
+            if (find_first_descendant_of(node, "string", &str)) {
+                path = strip_quotes(a, cbm_node_text(a, str, ctx->source));
+            } else {
+                path = strip_quotes(a, cbm_node_text(a, node, ctx->source));
+            }
+            if (path && path[0]) {
+                CBMImport imp = {.local_name = path_last(a, path), .module_path = path};
+                cbm_imports_push(&ctx->result->imports, a, imp);
+            }
+            continue;
+        }
+        ts_nstack_push_children(&stack, a, node);
+    }
+}
+
 // --- Main dispatch ---
 
 void cbm_extract_imports(CBMExtractCtx *ctx) {
@@ -2467,6 +2854,7 @@ void cbm_extract_imports(CBMExtractCtx *ctx) {
     case CBM_LANG_EMACSLISP:
     case CBM_LANG_FENNEL:
     case CBM_LANG_COMMONLISP:
+    case CBM_LANG_CLOJURE:
         parse_lisp_imports(ctx);
         break;
     case CBM_LANG_STARLARK:
@@ -2531,6 +2919,30 @@ void cbm_extract_imports(CBMExtractCtx *ctx) {
         break;
     case CBM_LANG_ADA:
         parse_ada_imports(ctx);
+        break;
+    case CBM_LANG_ELM:
+        parse_elm_imports(ctx);
+        break;
+    case CBM_LANG_MOVE:
+        parse_move_imports(ctx);
+        break;
+    case CBM_LANG_SMALI:
+        parse_smali_imports(ctx);
+        break;
+    case CBM_LANG_TLAPLUS:
+        parse_tlaplus_imports(ctx);
+        break;
+    case CBM_LANG_VHDL:
+        parse_vhdl_imports(ctx);
+        break;
+    case CBM_LANG_WIT:
+        parse_wit_imports(ctx);
+        break;
+    case CBM_LANG_SMITHY:
+        parse_smithy_imports(ctx);
+        break;
+    case CBM_LANG_HYPRLANG:
+        parse_hyprlang_imports(ctx);
         break;
     /* Host languages whose tree-sitter grammar leaves <script> bodies as raw
      * text — re-parse the embedded slice via the embedded-language spec. */

@@ -1287,7 +1287,7 @@ static const cbm_gbuf_node_t *resolve_sibling_file(const cbm_pipeline_ctx_t *ctx
     }
 
     /* Candidate relative paths, in priority order. */
-    char cands[4][PKGMAP_PATH_BUF];
+    char cands[5][PKGMAP_PATH_BUF];
     int ncand = 0;
     const char *base = module_path;
     /* Skip a leading "./". */
@@ -1309,6 +1309,15 @@ static const cbm_gbuf_node_t *resolve_sibling_file(const cbm_pipeline_ctx_t *ctx
     }
     /* 3. Meson subdir: dir/<module_path>/meson.build. */
     snprintf(cands[ncand++], PKGMAP_PATH_BUF, "%s%s%s/meson.build", dir, dir[0] ? "/" : "", base);
+    /* 4. Basename sibling: dir/<basename(module_path)>.  Covers include paths
+     *    that carry a non-relative prefix (Hyprlang `source = ~/.config/.../x.conf`,
+     *    absolute include paths) but reference a file sitting beside the importer. */
+    {
+        const char *slash = strrchr(base, '/');
+        if (slash && slash[1]) {
+            snprintf(cands[ncand++], PKGMAP_PATH_BUF, "%s%s%s", dir, dir[0] ? "/" : "", slash + 1);
+        }
+    }
 
     const cbm_gbuf_node_t *found = NULL;
     for (int i = 0; i < ncand; i++) {
