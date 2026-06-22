@@ -336,7 +336,7 @@ static const cbm_gbuf_node_t *calls_find_source(cbm_pipeline_ctx_t *ctx, const c
 static int resolve_single_call(cbm_pipeline_ctx_t *ctx, CBMCall *call,
                                const CBMResolvedCallArray *lsp_calls, const char *rel,
                                const char *module_qn, const char **imp_keys, const char **imp_vals,
-                               int imp_count) {
+                               int imp_count, CBMLanguage lang) {
     const cbm_gbuf_node_t *source_node = calls_find_source(ctx, rel, call->enclosing_func_qn);
     if (!source_node) {
         return 0;
@@ -364,6 +364,19 @@ static int resolve_single_call(cbm_pipeline_ctx_t *ctx, CBMCall *call,
     cbm_resolution_t res = cbm_registry_resolve(ctx->registry, call->callee_name, module_qn,
                                                 imp_keys, imp_vals, imp_count);
     if (!res.qualified_name || res.qualified_name[0] == '\0') {
+        return 0;
+    }
+
+    /* Perl call-graph noise guard (#476). Perl has no LSP resolver, so the
+     * generic registry chain is the only resolver; for builtins (push/shift/
+     * keys/...) and method calls ($obj->m with an unresolved receiver), a *weak*
+     * cross-file short-name match to a project sub sharing the name is almost
+     * always a false positive. Suppress only those weak matches; KEEP the
+     * high-confidence same_module / import_map strategies so a genuine
+     * same-file or imported call to a builtin-named sub still resolves. Gated
+     * to Perl — other languages are unaffected. */
+    if (cbm_perl_suppress_generic_match(lang == CBM_LANG_PERL, call->is_method, call->callee_name,
+                                        res.strategy)) {
         return 0;
     }
     const cbm_gbuf_node_t *target_node = cbm_gbuf_find_by_qn(ctx->gbuf, res.qualified_name);
@@ -440,7 +453,7 @@ int cbm_pipeline_pass_calls(cbm_pipeline_ctx_t *ctx, const cbm_file_info_t *file
             }
             total_calls++;
             if (resolve_single_call(ctx, call, &result->resolved_calls, rel, module_qn, imp_keys,
-                                    imp_vals, imp_count)) {
+                                    imp_vals, imp_count, files[i].language)) {
                 resolved++;
             } else {
                 unresolved++;

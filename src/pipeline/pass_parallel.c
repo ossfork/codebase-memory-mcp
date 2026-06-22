@@ -1693,7 +1693,7 @@ static void lsp_idx_free_key(const char *key, void *value, void *ud) {
 /* Resolve calls for one file and emit CALLS/HTTP_CALLS/ASYNC_CALLS edges. */
 static void resolve_file_calls(resolve_ctx_t *rc, resolve_worker_state_t *ws, CBMFileResult *result,
                                const char *rel, const char *module_qn, const char **imp_keys,
-                               const char **imp_vals, int imp_count) {
+                               const char **imp_vals, int imp_count, CBMLanguage lang) {
     /* Build a per-file hash index of resolved_calls keyed by
      * "caller_qn|callee_short" for O(1) lookup. cbm_pipeline_find_lsp_
      * resolution would otherwise do an O(N) linear scan over
@@ -1802,6 +1802,19 @@ static void resolve_file_calls(resolve_ctx_t *rc, resolve_worker_state_t *ws, CB
         try_field_type_hint(rc, &res, call->callee_name, source_node->id);
         atomic_fetch_add_explicit(&rc->time_ns_rc_hint, extract_now_ns() - _rc_t0,
                                   memory_order_relaxed);
+
+        /* Perl call-graph noise guard (#476), mirroring the sequential pass
+         * (pass_calls.c). Perl has no LSP resolver; for builtins (push/shift/
+         * keys/...) and method calls ($obj->m, unresolved receiver), suppress
+         * only WEAK cross-file short-name matches and keep the high-confidence
+         * same_module / import_map strategies so a genuine same-file or
+         * imported call to a builtin-named sub still resolves. Placed after the
+         * field-type hint so a hint cannot re-introduce a suppressed edge.
+         * Gated to Perl — other languages are unaffected. */
+        if (cbm_perl_suppress_generic_match(lang == CBM_LANG_PERL, call->is_method,
+                                            call->callee_name, res.strategy)) {
+            continue;
+        }
 
         if (!res.qualified_name || res.qualified_name[0] == '\0') {
             if (cbm_service_pattern_route_method(call->callee_name) != NULL) {
@@ -2328,7 +2341,7 @@ static void resolve_worker(int worker_id, void *ctx_ptr) {
 
         /* ── CALLS resolution ──────────────────────────────────── */
         _ph_t0 = extract_now_ns();
-        resolve_file_calls(rc, ws, result, rel, module_qn, imp_keys, imp_vals, imp_count);
+        resolve_file_calls(rc, ws, result, rel, module_qn, imp_keys, imp_vals, imp_count, lang);
         atomic_fetch_add_explicit(&rc->time_ns_calls, extract_now_ns() - _ph_t0,
                                   memory_order_relaxed);
 

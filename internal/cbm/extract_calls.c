@@ -355,6 +355,40 @@ static char *extract_swift_callee(CBMArena *a, TSNode node, const char *source, 
     return NULL;
 }
 
+// A Perl sub/method name is an identifier: it starts with a letter or '_',
+// contains only [A-Za-z0-9_] plus the '::' package separator, and is never a
+// string/config literal. tree-sitter-perl mis-parses config lines in .cgi /
+// heredoc-heavy files into call-shaped nodes whose "callee" is a dotted config
+// token (e.g. "log4perl.appender.File.utf8"); rejecting non-identifier text
+// here stops those from becoming bogus CALLS edges. Any '.', whitespace, quote,
+// or '/' disqualifies the token.
+static bool perl_is_identifier_callee(const char *name) {
+    if (!name || !name[0]) {
+        return false;
+    }
+    unsigned char c0 = (unsigned char)name[0];
+    if (!(isalpha(c0) || c0 == '_')) {
+        return false;
+    }
+    for (const char *p = name; *p; p++) {
+        unsigned char c = (unsigned char)*p;
+        if (isalnum(c) || c == '_') {
+            continue;
+        }
+        if (c == ':') {
+            // Only the '::' package separator is allowed: require an adjacent
+            // pair, and reject a lone ':', ':::', or a trailing '::'.
+            if (p[1] != ':' || p[2] == ':' || p[2] == '\0') {
+                return false;
+            }
+            p++; // consume the second ':'; the loop's p++ moves past the pair
+            continue;
+        }
+        return false; // '.', space, quote, '/', etc. → not a sub/method name
+    }
+    return true;
+}
+
 // Callee extraction for scripting languages (Elixir, Perl, PHP, Kotlin, MATLAB).
 static char *extract_scripting_callee(CBMArena *a, TSNode node, const char *source,
                                       CBMLanguage lang, const char *nk) {
@@ -367,7 +401,24 @@ static char *extract_scripting_callee(CBMArena *a, TSNode node, const char *sour
         return NULL;
     }
     if (lang == CBM_LANG_PERL && ts_node_child_count(node) > 0) {
-        return cbm_node_text(a, ts_node_child(node, 0), source);
+        // Pull the actual sub/method name token rather than blindly taking
+        // child(0). Grammar (verified against the vendored parser):
+        //   method_call_expression   : field `method`   ($obj->m / Class->m)
+        //   function_call_expression : field `function` (foo(); name with '.'
+        //                              from a config-string misparse lands here)
+        //   ambiguous_function_call_expression : field `function`
+        //   func1op_call_expression  : builtin keyword as child(0) (no field)
+        TSNode name_node = ts_node_child_by_field_name(node, TS_FIELD("method"));
+        if (ts_node_is_null(name_node)) {
+            name_node = ts_node_child_by_field_name(node, TS_FIELD("function"));
+        }
+        if (ts_node_is_null(name_node)) {
+            name_node = ts_node_child(node, 0);
+        }
+        char *pn = cbm_node_text(a, name_node, source);
+        // Reject anything that is not a bare Perl sub/method identifier (config
+        // strings, quoted literals, paths) so no spurious CALLS edge is emitted.
+        return perl_is_identifier_callee(pn) ? pn : NULL;
     }
     if (lang == CBM_LANG_PHP) {
         TSNode func_node = ts_node_child_by_field_name(node, TS_FIELD("function"));
@@ -1134,6 +1185,14 @@ void handle_calls(CBMExtractCtx *ctx, TSNode node, const CBMLangSpec *spec, Walk
             call.loop_depth = state->loop_depth;     // enclosing loop nesting at this call
             call.branch_depth = state->branch_depth; // enclosing branch nesting at this call
             call.start_line = (int)ts_node_start_point(node).row + TS_LINE_OFFSET;
+            // Perl-only: flag arrow/method calls ($obj->m / Class->m). The
+            // generic short-name resolver cannot place a method without a known
+            // receiver type, so the call-resolution pass suppresses those edges.
+            // Default false for every other language (struct is zero-init).
+            if (ctx->language == CBM_LANG_PERL &&
+                strcmp(ts_node_type(node), "method_call_expression") == 0) {
+                call.is_method = true;
+            }
 
             TSNode args = ts_node_child_by_field_name(node, TS_FIELD("arguments"));
             if (!ts_node_is_null(args)) {
