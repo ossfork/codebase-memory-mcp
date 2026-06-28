@@ -980,9 +980,14 @@ fi
 echo "OK 8v: VS Code MCP"
 
 # 8w: OpenClaw MCP
-CMD=$(json_get "$FAKE_HOME/.openclaw/openclaw.json" "d['mcpServers']['codebase-memory-mcp']['command']")
+CMD=$(json_get "$FAKE_HOME/.openclaw/openclaw.json" "d['mcp']['servers']['codebase-memory-mcp']['command']")
 if ! path_match "$CMD" "$SELF_PATH"; then
   echo "FAIL 8w: OpenClaw command='$CMD'"
+  exit 1
+fi
+ENABLED=$(json_get "$FAKE_HOME/.openclaw/openclaw.json" "d['mcp']['servers']['codebase-memory-mcp'].get('enabled')")
+if [ "$ENABLED" != "True" ]; then
+  echo "FAIL 8w: OpenClaw enabled='$ENABLED'"
   exit 1
 fi
 echo "OK 8w: OpenClaw MCP"
@@ -1091,7 +1096,7 @@ fi
 if cat "$FAKE_HOME/.openclaw/openclaw.json" 2>/dev/null | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
-sys.exit(1 if 'codebase-memory-mcp' in d.get('mcpServers', {}) else 0)
+sys.exit(1 if 'codebase-memory-mcp' in d.get('mcp', {}).get('servers', {}) else 0)
 " 2>/dev/null; then
   echo "OK 9k: OpenClaw MCP removed"
 else

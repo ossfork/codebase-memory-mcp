@@ -478,16 +478,15 @@ TEST(project_name_always_validator_safe_issue349) {
     PASS();
 }
 
-TEST(project_name_preserves_unicode_segments_issue571) {
+TEST(project_name_encodes_unicode_segments_issue571) {
     char *got = cbm_project_name_from_path(
         "/Users/yunxin/Desktop/\xe5\xbc\x80\xe5\x8f\x91/"
         "\xe5\x90\x8e\xe7\xab\xaf/"
         "\xe4\xbf\xa1\xe7\xa7\x9f\xe9\xa3\x8e\xe6\x8e\xa7\xe9\x80\x9a\xe5\x90\x8e\xe7\xab\xaf");
     ASSERT_NOT_NULL(got);
     ASSERT_STR_EQ(got,
-                  "Users-yunxin-Desktop-\xe5\xbc\x80\xe5\x8f\x91-"
-                  "\xe5\x90\x8e\xe7\xab\xaf-"
-                  "\xe4\xbf\xa1\xe7\xa7\x9f\xe9\xa3\x8e\xe6\x8e\xa7\xe9\x80\x9a\xe5\x90\x8e\xe7\xab\xaf");
+                  "Users-yunxin-Desktop-e5bc80e58f91-e5908ee7abaf-"
+                  "e4bfa1e7a79fe9a38ee68ea7e9809ae5908ee7abaf");
     ASSERT_TRUE(cbm_validate_project_name(got));
     free(got);
     PASS();
@@ -594,7 +593,7 @@ SUITE(fqn) {
     RUN_TEST(project_name_already_dashed);
     RUN_TEST(project_name_deep_path);
     RUN_TEST(project_name_always_validator_safe_issue349);
-    RUN_TEST(project_name_preserves_unicode_segments_issue571);
+    RUN_TEST(project_name_encodes_unicode_segments_issue571);
     RUN_TEST(project_name_colon_only);
     RUN_TEST(project_name_backslash_only);
     RUN_TEST(project_name_consecutive_colons);

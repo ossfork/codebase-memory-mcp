@@ -212,7 +212,7 @@ TEST(mcp_index_repository_declares_name_override_issue571) {
     ASSERT_NOT_NULL(json);
     ASSERT_NOT_NULL(strstr(json, "\"index_repository\""));
     ASSERT_NOT_NULL(strstr(json, "\"name\":{\"type\":\"string\""));
-    ASSERT_NOT_NULL(strstr(json, "Override the derived project name"));
+    ASSERT_NOT_NULL(strstr(json, "Non-ASCII bytes are encoded"));
     free(json);
     PASS();
 }
