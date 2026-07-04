@@ -6,8 +6,8 @@
 #include "foundation/compat.h"    /* cbm_setenv, cbm_unsetenv */
 #include "foundation/compat_fs.h" /* cbm_mkdir_p, cbm_fopen */
 #include "foundation/log.h"
-#include "foundation/platform.h"  /* cbm_resolve_cache_dir */
-#include "ui/http_server.h"       /* cbm_http_server_resolve_binary_path */
+#include "foundation/platform.h" /* cbm_resolve_cache_dir */
+#include "ui/http_server.h"      /* cbm_http_server_resolve_binary_path */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -202,7 +202,8 @@ int cbm_index_spawn_worker(const char *args_json, bool single_thread, const char
 
     char sig[16];
     snprintf(sig, sizeof(sig), "%d", r.term_signal);
-    cbm_log_info("index.supervisor.reap", "outcome", cbm_proc_outcome_str(r.outcome), "signal", sig);
+    cbm_log_info("index.supervisor.reap", "outcome", cbm_proc_outcome_str(r.outcome), "signal",
+                 sig);
     return 0;
 }
 
