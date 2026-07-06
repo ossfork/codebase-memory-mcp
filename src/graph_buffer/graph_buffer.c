@@ -344,8 +344,7 @@ static void register_node_in_indexes(cbm_gbuf_t *gb, cbm_gbuf_node_t *node) {
         }
         cbm_gbuf_node_t **grown = realloc(gb->by_id, (size_t)nc * sizeof(*grown));
         if (grown) {
-            memset(grown + gb->by_id_cap, 0,
-                   (size_t)(nc - gb->by_id_cap) * sizeof(*grown));
+            memset(grown + gb->by_id_cap, 0, (size_t)(nc - gb->by_id_cap) * sizeof(*grown));
             gb->by_id = grown;
             gb->by_id_cap = nc;
         }
@@ -683,11 +682,11 @@ int64_t cbm_gbuf_upsert_node(cbm_gbuf_t *gb, const char *label, const char *name
          *    function of the colliding entities, not of scheduling. Exactly
          *    one entity is dropped, as one always was; kind-disambiguated
          *    QNs (the real cure) are tracked as a follow-up. */
-        bool same_entity =
-            existing->label && label && strcmp(existing->label, label) == 0 &&
-            existing->file_path && file_path && strcmp(existing->file_path, file_path) == 0 &&
-            existing->start_line == start_line && existing->name && name &&
-            strcmp(existing->name, name) == 0;
+        bool same_entity = existing->label && label && strcmp(existing->label, label) == 0 &&
+                           existing->file_path && file_path &&
+                           strcmp(existing->file_path, file_path) == 0 &&
+                           existing->start_line == start_line && existing->name && name &&
+                           strcmp(existing->name, name) == 0;
         if (!same_entity) {
             int c = strcmp(label ? label : "", existing->label ? existing->label : "");
             if (c == 0) {
@@ -717,8 +716,7 @@ int64_t cbm_gbuf_upsert_node(cbm_gbuf_t *gb, const char *label, const char *name
         const char *new_label_interned = gb_intern(gb, label);
         bool label_changed = !existing->label || !new_label_interned ||
                              strcmp(existing->label, new_label_interned) != 0;
-        bool name_changed =
-            !existing->name || !new_name || strcmp(existing->name, new_name) != 0;
+        bool name_changed = !existing->name || !new_name || strcmp(existing->name, new_name) != 0;
         if (label_changed) {
             remove_node_from_ptr_array(
                 cbm_ht_get(gb->nodes_by_label, existing->label ? existing->label : ""),
@@ -726,8 +724,7 @@ int64_t cbm_gbuf_upsert_node(cbm_gbuf_t *gb, const char *label, const char *name
         }
         if (name_changed) {
             remove_node_from_ptr_array(
-                cbm_ht_get(gb->nodes_by_name, existing->name ? existing->name : ""),
-                existing->id);
+                cbm_ht_get(gb->nodes_by_name, existing->name ? existing->name : ""), existing->id);
         }
         existing->label = (char *)new_label_interned;
         free(existing->name);
@@ -740,8 +737,8 @@ int64_t cbm_gbuf_upsert_node(cbm_gbuf_t *gb, const char *label, const char *name
             existing->properties_json = new_props;
         }
         if (label_changed) {
-            node_ptr_array_t *by_label =
-                get_or_create_node_array(gb->nodes_by_label, existing->label ? existing->label : "");
+            node_ptr_array_t *by_label = get_or_create_node_array(
+                gb->nodes_by_label, existing->label ? existing->label : "");
             cbm_da_push(by_label, (const cbm_gbuf_node_t *)existing);
         }
         if (name_changed) {
@@ -1215,12 +1212,11 @@ static void merge_update_existing(cbm_gbuf_t *dst, cbm_gbuf_node_t *existing,
          * (and every downstream consumer) run to run. Same entity → refresh;
          * different entity → keep the lexicographically smallest
          * (label, file_path, start_line, name). */
-        bool same_entity =
-            existing->label && sn->label && strcmp(existing->label, sn->label) == 0 &&
-            existing->file_path && sn->file_path &&
-            strcmp(existing->file_path, sn->file_path) == 0 &&
-            existing->start_line == sn->start_line && existing->name && sn->name &&
-            strcmp(existing->name, sn->name) == 0;
+        bool same_entity = existing->label && sn->label &&
+                           strcmp(existing->label, sn->label) == 0 && existing->file_path &&
+                           sn->file_path && strcmp(existing->file_path, sn->file_path) == 0 &&
+                           existing->start_line == sn->start_line && existing->name && sn->name &&
+                           strcmp(existing->name, sn->name) == 0;
         bool sn_wins = true;
         if (!same_entity) {
             int c = strcmp(sn->label ? sn->label : "", existing->label ? existing->label : "");
@@ -1241,10 +1237,10 @@ static void merge_update_existing(cbm_gbuf_t *dst, cbm_gbuf_node_t *existing,
              * label/name changes (the old code left the node listed under its
              * original label/name, so find_by_label/name mis-listed it). */
             const char *new_label = gb_intern(dst, sn->label);
-            bool label_changed = !existing->label || !new_label ||
-                                 strcmp(existing->label, new_label) != 0;
-            bool name_changed = !existing->name || !sn->name ||
-                                strcmp(existing->name, sn->name) != 0;
+            bool label_changed =
+                !existing->label || !new_label || strcmp(existing->label, new_label) != 0;
+            bool name_changed =
+                !existing->name || !sn->name || strcmp(existing->name, sn->name) != 0;
             if (label_changed) {
                 remove_node_from_ptr_array(
                     cbm_ht_get(dst->nodes_by_label, existing->label ? existing->label : ""),

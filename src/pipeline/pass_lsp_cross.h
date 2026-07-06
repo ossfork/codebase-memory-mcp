@@ -31,10 +31,10 @@
  * — type_rep.h covers the type-representation primitives while
  * go_lsp.h was where the project-wide def descriptor landed first. */
 #include "lsp/go_lsp.h"
-#include "lsp/py_lsp.h" /* cbm_py_build_cross_registry / cbm_run_py_lsp_cross_with_registry */
-#include "lsp/c_lsp.h"  /* cbm_c_build_cross_registry / cbm_run_c_lsp_cross_with_registry */
-#include "lsp/cs_lsp.h" /* cbm_cs_build_cross_registry / cbm_run_cs_lsp_cross_with_registry */
-#include "lsp/ts_lsp.h" /* cbm_ts_build_cross_registry / cbm_run_ts_lsp_cross_with_registry */
+#include "lsp/py_lsp.h"   /* cbm_py_build_cross_registry / cbm_run_py_lsp_cross_with_registry */
+#include "lsp/c_lsp.h"    /* cbm_c_build_cross_registry / cbm_run_c_lsp_cross_with_registry */
+#include "lsp/cs_lsp.h"   /* cbm_cs_build_cross_registry / cbm_run_cs_lsp_cross_with_registry */
+#include "lsp/ts_lsp.h"   /* cbm_ts_build_cross_registry / cbm_run_ts_lsp_cross_with_registry */
 #include "lsp/rust_lsp.h" /* cbm_rust_build_cross_registry / cbm_run_rust_lsp_cross_with_registry */
 #include "pipeline/pipeline_internal.h"
 #include <stdbool.h>

@@ -1053,8 +1053,8 @@ static int cmp_deferred_edge_canonical(const void *pa, const void *pb) {
  * and apply the per-node max_edges budget HERE — single-threaded — so the
  * admitted edge set is a pure function of the (canonically sorted) inputs,
  * independent of worker count and scheduling. */
-static int phase6b_merge_edges(cbm_gbuf_t *gbuf, deferred_edge_buf_t *worker_bufs,
-                               int worker_count, int *edge_counts, int max_edges) {
+static int phase6b_merge_edges(cbm_gbuf_t *gbuf, deferred_edge_buf_t *worker_bufs, int worker_count,
+                               int *edge_counts, int max_edges) {
     int total_pairs = 0;
     for (int w = 0; w < worker_count; w++) {
         total_pairs += worker_bufs[w].count;
@@ -1335,8 +1335,7 @@ static void free_token_pool_entry(const char *key, void *value, void *ud) {
 /* all_tokens slots BORROW their strings from the per-worker intern pools;
  * the pools own exactly one copy per unique token per worker. */
 static void free_funcs_and_tokens(cbm_sem_func_t *funcs, int func_count, char **all_tokens,
-                                  const int *token_counts, CBMHashTable **pools,
-                                  int worker_count) {
+                                  const int *token_counts, CBMHashTable **pools, int worker_count) {
     (void)token_counts;
     for (int f = 0; f < func_count; f++) {
         free(funcs[f].tfidf_indices);
@@ -1410,7 +1409,6 @@ int cbm_pipeline_pass_semantic_edges(cbm_pipeline_ctx_t *ctx) {
                                    worker_count);
     CBM_PROF_END_N("semantic_edges", "4_build_and_store_vec", t_phase4, func_count);
 
-
     cbm_log_info("pass.semantic.vectors_stored", "count", itoa_log(func_count));
 
     /* Phase 5: LSH hyperplanes → signatures → buckets. */
@@ -1432,8 +1430,7 @@ int cbm_pipeline_pass_semantic_edges(cbm_pipeline_ctx_t *ctx) {
     free_lsh_buckets(band_buckets);
     free(signatures);
     cbm_log_info("pass.done", "pass", "semantic_edges", "edges", itoa_log(total_edges));
-    free_funcs_and_tokens(funcs, func_count, all_tokens, token_counts, token_pools,
-                          worker_count);
+    free_funcs_and_tokens(funcs, func_count, all_tokens, token_counts, token_pools, worker_count);
     free(token_counts);
     cbm_sem_corpus_free(corpus);
     CBM_PROF_END("semantic_edges", "7_cleanup", t_phase7);

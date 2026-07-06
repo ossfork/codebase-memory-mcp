@@ -230,8 +230,7 @@ static void sim_query_worker(int worker_id, void *ctx_ptr) {
              * assigned in parallel-merge order and vary run to run, which
              * flipped which side owned a pair and (with the per-source edge
              * cap) flickered the emitted set (determinism). */
-            if (!src->qn || !cand->qualified_name ||
-                strcmp(src->qn, cand->qualified_name) >= 0) {
+            if (!src->qn || !cand->qualified_name || strcmp(src->qn, cand->qualified_name) >= 0) {
                 continue;
             }
 

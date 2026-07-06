@@ -2852,7 +2852,8 @@ static void resolve_worker(int worker_id, void *ctx_ptr) {
                                 /*result=*/NULL);
                         } else {
                             cbm_pxc_run_one(lang, result, lsp_source, lsp_source_len, def_module,
-                                            file_defs, file_def_count, imp_keys, imp_vals, imp_count);
+                                            file_defs, file_def_count, imp_keys, imp_vals,
+                                            imp_count);
                         }
                     } else if (lang == CBM_LANG_JAVASCRIPT || lang == CBM_LANG_TYPESCRIPT ||
                                lang == CBM_LANG_TSX) {
