@@ -606,9 +606,20 @@ static int wide_stat(const char *path, struct stat *st) {
 #endif
 }
 
-/* Stat a path, skipping symlinks. Returns 0 on success, -1 to skip. */
+/* Stat a path, skipping symlinks (POSIX) and junctions / reparse points
+ * (Windows). Returns 0 on success, -1 to skip. Skipping reparse points keeps
+ * discovery from walking through a junction that points outside the project
+ * root, mirroring the POSIX S_ISLNK skip. */
 static int safe_stat(const char *abs_path, struct stat *st) {
 #ifdef _WIN32
+    wchar_t *wpath = cbm_utf8_to_wide(abs_path);
+    if (wpath) {
+        DWORD attr = GetFileAttributesW(wpath);
+        free(wpath);
+        if (attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_REPARSE_POINT)) {
+            return CBM_NOT_FOUND;
+        }
+    }
     return wide_stat(abs_path, st);
 #else
     if (lstat(abs_path, st) != 0) {
