@@ -104,7 +104,14 @@ The `install` command auto-detects all installed coding agents and configures MC
 
 ### Graph Visualization UI
 
-If you downloaded the `ui` variant:
+The UI ships as a separate `ui` build (it embeds the frontend). The default install on every channel is the lean, headless server; opt into the UI build with:
+
+- **install.sh:** add `--ui` (see [Quick Start](#quick-start))
+- **npm:** `CBM_VARIANT=ui npm install -g codebase-memory-mcp`
+- **PyPI:** `CBM_VARIANT=ui pip install codebase-memory-mcp`
+- **Manual:** download the `codebase-memory-mcp-ui-<os>-<arch>` archive
+
+Then run it:
 
 ```bash
 codebase-memory-mcp --ui=true --port=9749
