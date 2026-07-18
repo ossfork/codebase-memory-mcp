@@ -26,6 +26,13 @@ enum {
     CBM_DAEMON_IPC_RETRY_INTERVAL_MS = 10,
     CBM_DAEMON_IPC_COORDINATION_CLEANUP_MS = 500,
     CBM_DAEMON_IPC_WINDOWS_RENDEZVOUS_RETRY_MS = 250,
+    /* After ConnectNamedPipe the server must see the client's first bytes
+     * before it can impersonate it (ImpersonateNamedPipeClient fails with
+     * ERROR_CANNOT_IMPERSONATE until data has been read from the pipe). The
+     * client always sends its HELLO request immediately after connecting, so
+     * this only bounds how long a connect-but-never-send peer is tolerated;
+     * generous for starved CI runners, still finite. */
+    CBM_DAEMON_IPC_FIRST_FRAME_TIMEOUT_MS = 15000,
 };
 
 /* Last private-namespace validation refusal, set at the exact failing check.
@@ -5128,6 +5135,26 @@ static int win_overlapped_wait(HANDLE handle, OVERLAPPED *overlapped, DWORD time
     return result;
 }
 
+/* Wait until the connected client has placed its first bytes in the pipe.
+ * PeekNamedPipe inspects the buffer without consuming it, so the client's
+ * HELLO frame stays intact for the runtime's own read; we only gate on its
+ * PRESENCE, which is the precondition ImpersonateNamedPipeClient requires.
+ * Returns false on a broken pipe or if the deadline passes with no data. */
+static bool win_pipe_wait_for_client_data(HANDLE pipe, uint64_t deadline_ms) {
+    for (;;) {
+        DWORD available = 0;
+        if (!PeekNamedPipe(pipe, NULL, 0, NULL, &available, NULL)) {
+            return false;
+        }
+        if (available > 0) {
+            return true;
+        }
+        if (!win_retry_pause(deadline_ms)) {
+            return false;
+        }
+    }
+}
+
 static bool win_pipe_client_is_current_user(HANDLE pipe) {
     win_security_t security;
     if (!win_security_init(&security)) {
@@ -5222,6 +5249,17 @@ int cbm_daemon_ipc_accept(cbm_daemon_ipc_listener_t *listener, uint32_t timeout_
         (void)CloseHandle(listener->pipe);
         listener->pipe = INVALID_HANDLE_VALUE;
         return result;
+    }
+    /* The client sends its HELLO immediately after connecting; wait for those
+     * bytes before impersonating, or ImpersonateNamedPipeClient fails with
+     * ERROR_CANNOT_IMPERSONATE (1368) and every client is refused. */
+    if (!win_pipe_wait_for_client_data(listener->pipe,
+                                       ipc_deadline_after(CBM_DAEMON_IPC_FIRST_FRAME_TIMEOUT_MS))) {
+        cbm_log_warn("daemon.accept.client_rejected", "stage", "first_frame");
+        (void)DisconnectNamedPipe(listener->pipe);
+        (void)CloseHandle(listener->pipe);
+        listener->pipe = INVALID_HANDLE_VALUE;
+        return -1;
     }
     if (!win_pipe_client_is_current_user(listener->pipe)) {
         /* The daemon-side twin of the client's server_identity log: without
