@@ -37,6 +37,7 @@ enum {
     MAIN_PATH_CAP = 4096,
     MAIN_CONNECT_TIMEOUT_MS = 1000,
     MAIN_STARTUP_TIMEOUT_MS = 10000,
+    MAIN_MCP_STARTUP_TIMEOUT_MS = 30000,
     MAIN_REQUEST_TIMEOUT_MS = 24 * 60 * 60 * 1000,
     MAIN_HOOK_CONNECT_TIMEOUT_MS = 250,
     MAIN_HOOK_STARTUP_TIMEOUT_MS = 1500,
@@ -1631,7 +1632,7 @@ int main(int argc, char **argv) {
             ? cbm_version_cohort_acquire(client_cohort_manager, &identity,
                                          main_deadline_after(role == CBM_DAEMON_PROCESS_HOOK_CLIENT
                                                                  ? MAIN_HOOK_STARTUP_TIMEOUT_MS
-                                                                 : MAIN_STARTUP_TIMEOUT_MS),
+                                                                 : MAIN_MCP_STARTUP_TIMEOUT_MS),
                                          &client_cohort_lease, &client_cohort_conflict)
             : CBM_VERSION_COHORT_IO;
     if (client_cohort_status != CBM_VERSION_COHORT_OK) {
@@ -1657,7 +1658,7 @@ int main(int argc, char **argv) {
         .connect_timeout_ms = role == CBM_DAEMON_PROCESS_HOOK_CLIENT ? MAIN_HOOK_CONNECT_TIMEOUT_MS
                                                                      : MAIN_CONNECT_TIMEOUT_MS,
         .startup_timeout_ms = role == CBM_DAEMON_PROCESS_HOOK_CLIENT ? MAIN_HOOK_STARTUP_TIMEOUT_MS
-                                                                     : MAIN_STARTUP_TIMEOUT_MS,
+                                                                     : MAIN_MCP_STARTUP_TIMEOUT_MS,
     };
     cbm_daemon_bootstrap_result_t bootstrap_result;
     cbm_daemon_bootstrap_status_t bootstrap_status =

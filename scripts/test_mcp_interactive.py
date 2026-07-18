@@ -271,7 +271,7 @@ def main() -> int:
         required=True,
     )
     parser.add_argument("--repo-path", required=True)
-    parser.add_argument("--response-timeout", type=float, default=30.0)
+    parser.add_argument("--response-timeout", type=float, default=45.0)
     parser.add_argument("--exit-timeout", type=float, default=15.0)
     args = parser.parse_args()
 

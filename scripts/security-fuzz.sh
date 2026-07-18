@@ -91,7 +91,7 @@ test_invalid_index_interactive() {
     HOME="$FUZZ_HOME" CBM_CACHE_DIR="$FUZZ_CACHE" \
         python3 "$(dirname "$0")/test_mcp_interactive.py" "$BINARY" \
         --scenario invalid-index --repo-path /nonexistent/path/abc123 \
-        --response-timeout 30 --exit-timeout 15 > "$tmpoutput" 2>&1 || ec=$?
+        --response-timeout 45 --exit-timeout 15 > "$tmpoutput" 2>&1 || ec=$?
 
     if [[ $ec -eq 0 ]]; then
         PASS=$((PASS + 1))

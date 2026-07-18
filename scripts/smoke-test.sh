@@ -564,7 +564,7 @@ echo "=== Phase 4: security checks ==="
 echo "Testing clean shutdown..."
 if ! python3 "$REPO_ROOT/scripts/test_mcp_interactive.py" \
     "$BINARY" --scenario initialize --repo-path "$TMPDIR" \
-    --response-timeout 30 --exit-timeout 8 > /dev/null; then
+    --response-timeout 45 --exit-timeout 8 > /dev/null; then
   echo "FAIL: initialized binary did not exit within 8 seconds after EOF"
   exit 1
 fi
@@ -601,7 +601,7 @@ echo "=== Phase 5: MCP stdio transport (agent handshake) ==="
 
 # Helper: run binary in background with input, wait up to N seconds, collect output
 mcp_run() {
-  local input_file="$1" output_file="$2" max_wait="${3:-10}"
+  local input_file="$1" output_file="$2" max_wait="${3:-45}"
   "$BINARY" < "$input_file" > "$output_file" 2>/dev/null &
   local pid=$!
   local waited=0
@@ -621,7 +621,7 @@ cat > "$MCP_INPUT" << 'MCPEOF'
 {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
 MCPEOF
 
-mcp_run "$MCP_INPUT" "$MCP_OUTPUT" 10
+mcp_run "$MCP_INPUT" "$MCP_OUTPUT" 45
 
 # 5a: Verify initialize response (id:1)
 if ! grep -q '"id":1' "$MCP_OUTPUT"; then
@@ -706,7 +706,7 @@ TOOLS_MSG='{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
 TOOLS_LEN=${#TOOLS_MSG}
 printf "Content-Length: %d\r\n\r\n%s" "$TOOLS_LEN" "$TOOLS_MSG" >> "$MCP_CL_INPUT"
 
-mcp_run "$MCP_CL_INPUT" "$MCP_CL_OUTPUT" 10
+mcp_run "$MCP_CL_INPUT" "$MCP_CL_OUTPUT" 45
 
 if ! grep -q '"id":1' "$MCP_CL_OUTPUT" || ! grep -q '"id":2' "$MCP_CL_OUTPUT"; then
   echo "FAIL: Content-Length framed handshake did not produce both responses"
@@ -3154,7 +3154,7 @@ echo "=== Phase 16: stdio server leaves no orphan after shutdown ==="
 "$BINARY" < /dev/null > /dev/null 2>&1 &
 SHUT_SRV_PID=$!
 SHUT_GONE=0
-for _ in $(seq 1 60); do            # bounded ~6s wait (60 × 0.1s)
+for _ in $(seq 1 400); do           # bounded ~40s wait (400 × 0.1s)
   if ! kill -0 "$SHUT_SRV_PID" 2>/dev/null; then SHUT_GONE=1; break; fi
   sleep 0.1
 done

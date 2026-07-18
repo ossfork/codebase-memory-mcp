@@ -1191,6 +1191,7 @@ void cbm_cli_set_activation_cleanup_failure_for_test(bool enabled);
 int cbm_cli_activation_abort_cleanup_probe_for_test(void);
 #endif
 
+#if !defined(_WIN32) || defined(CBM_CLI_ENABLE_TEST_API)
 static void cli_activation_transaction_abort_or_fail_stop(
     cbm_activation_transaction_t **transaction_io, const char *component) {
     int cleanup_status = cli_activation_transaction_abort(transaction_io);
@@ -1204,6 +1205,7 @@ static void cli_activation_transaction_abort_or_fail_stop(
                                          component ? component : "activation_transaction_cleanup");
     }
 }
+#endif
 
 #ifdef CBM_CLI_ENABLE_TEST_API
 void cbm_cli_set_activation_cleanup_failure_for_test(bool enabled) {
