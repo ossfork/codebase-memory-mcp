@@ -18,6 +18,7 @@
 #include <daemon/bootstrap.h>
 #include <daemon/runtime.h>
 #include <daemon/version_cohort.h>
+#include <foundation/constants.h>
 #include <foundation/platform.h>
 #include <mcp/mcp.h>
 #include <foundation/yaml.h>
@@ -32,6 +33,9 @@
 #include <unistd.h>
 #ifndef _WIN32
 #include <sys/wait.h>
+#endif
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
 #endif
 #include <errno.h>
 #include <limits.h>
@@ -1425,11 +1429,16 @@ TEST(cli_update_agent_configs_finish_before_guard_release) {
     const char *asset_name = "codebase-memory-mcp-linux-amd64-portable.tar.gz";
 #endif
 #endif
-    const char *native_fixture =
 #ifdef __APPLE__
-        "/usr/bin/true";
+    /* Use the structurally real test runner rather than re-signing an Apple
+     * platform binary. Turning /usr/bin/true's arm64e/platform signature into
+     * an ad-hoc signature is OS-policy-dependent on older macOS runners. */
+    char native_fixture_path[CBM_SZ_4K] = {0};
+    uint32_t native_fixture_size = (uint32_t)sizeof(native_fixture_path);
+    ASSERT_EQ(_NSGetExecutablePath(native_fixture_path, &native_fixture_size), 0);
+    const char *native_fixture = native_fixture_path;
 #else
-        "/bin/true";
+    const char *native_fixture = "/bin/true";
 #endif
     FILE *native_file = fopen(native_fixture, "rb");
     ASSERT_NOT_NULL(native_file);
