@@ -80,6 +80,11 @@ class GuardFailure(Exception):
     pass
 
 
+def sha256_file(path):
+    """SHA-256 hex digest of a file's contents (payload/launcher digest checks)."""
+    return hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
+
+
 class PROCESSENTRY32W(ctypes.Structure):
     _fields_ = [
         ("dwSize", wintypes.DWORD),
