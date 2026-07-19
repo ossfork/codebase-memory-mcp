@@ -9537,14 +9537,36 @@ static bool cli_windows_prepare_install_pair(const wchar_t *launcher_source,
             payload_length > 0 && (size_t)payload_length < sizeof(payload_target);
     char launcher_fingerprint[CBM_DAEMON_BUILD_FINGERPRINT_SIZE];
     char payload_fingerprint[CBM_DAEMON_BUILD_FINGERPRINT_SIZE];
-    ready =
-        ready &&
-        cli_windows_stage_private_file(launcher_source_utf8, launcher_target,
-                                       launcher_fingerprint) &&
-        cli_windows_stage_private_file(payload_source_utf8, payload_target, payload_fingerprint) &&
-        strcmp(payload_fingerprint, expected_payload_sha256) == 0;
-    const char *version_argv[] = {launcher_target, "--version", NULL};
-    ready = ready && cbm_exec_no_shell(version_argv) == CLI_OK;
+    /* Each sub-step is checked separately so a staging failure is
+     * distinguishable from a fingerprint mismatch or an unrunnable staged
+     * launcher: the caller's single "did not remain runnable" message hides
+     * which one failed, and cbm_exec_no_shell does not inherit the child's
+     * stderr, so the launcher's own refusal reason never reaches the log. */
+    if (ready && !cli_windows_stage_private_file(launcher_source_utf8, launcher_target,
+                                                 launcher_fingerprint)) {
+        (void)fprintf(stderr, "error: private staging failed for the launcher (%s)\n",
+                      launcher_target);
+        ready = false;
+    }
+    if (ready && !cli_windows_stage_private_file(payload_source_utf8, payload_target,
+                                                 payload_fingerprint)) {
+        (void)fprintf(stderr, "error: private staging failed for the payload (%s)\n",
+                      payload_target);
+        ready = false;
+    }
+    if (ready && strcmp(payload_fingerprint, expected_payload_sha256) != 0) {
+        (void)fprintf(stderr,
+                      "error: staged payload build fingerprint did not match the expected payload\n");
+        ready = false;
+    }
+    if (ready) {
+        const char *version_argv[] = {launcher_target, "--version", NULL};
+        if (cbm_exec_no_shell(version_argv) != CLI_OK) {
+            (void)fprintf(stderr,
+                          "error: the staged launcher did not run (--version probe failed)\n");
+            ready = false;
+        }
+    }
     wchar_t *launcher_wide = ready ? cbm_utf8_to_wide(launcher_target) : NULL;
     wchar_t *payload_wide = ready ? cbm_utf8_to_wide(payload_target) : NULL;
     if (ready && launcher_wide && payload_wide) {
