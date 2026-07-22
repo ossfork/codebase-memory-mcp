@@ -107,7 +107,11 @@ build)
     ;;
 test)
     [ $# -ge 1 ] || { echo "usage: win.sh test <suite...>" >&2; exit 2; }
-    vm clangarm64 "cd /c/cbm && ./build/c/test-runner $* 2>&1 | tail -40"
+    # vm-run-tests.sh gives the suites CI's protected per-user temp root
+    # (daemon suites fail closed on the MSYS-shared /tmp), streams the FULL
+    # output, and refuses to report success without the runner's completion
+    # summary. A `| tail -40` here once hid 40 real Windows failures.
+    vm clangarm64 "cd /c/cbm && bash test-infrastructure/vm/vm-run-tests.sh $*"
     ;;
 guards)
     # Match the Windows CI product build: a clean, embedded-UI payload plus the
@@ -152,7 +156,7 @@ ubsan-build)
     ;;
 ubsan-test)
     [ $# -ge 1 ] || { echo "usage: win.sh ubsan-test <suite...>" >&2; exit 2; }
-    vm clang64 "cd /c/cbm && ./build/c/test-runner $* 2>&1 | tail -40"
+    vm clang64 "cd /c/cbm && CBM_VM_TEST_LOG=/tmp/win-ubsan-test.log bash test-infrastructure/vm/vm-run-tests.sh $*"
     ;;
 trap-ubsan-build)
     # NATIVE ARM64 UBSan via trap mode. -fsanitize-trap=undefined needs NO
@@ -170,7 +174,7 @@ trap-ubsan-test)
     [ $# -ge 1 ] || { echo "usage: win.sh trap-ubsan-test <suite...>" >&2; exit 2; }
     # A UB trap crashes the runner with SIGILL (exit 132); the harness reports
     # the failing suite so the emulated diagnosis loop can name the check.
-    vm clangarm64 "cd /c/cbm && ./build/trap-ubsan/test-runner $* 2>&1 | tail -40"
+    vm clangarm64 "cd /c/cbm && CBM_VM_RUNNER=build/trap-ubsan/test-runner CBM_VM_TEST_LOG=/tmp/win-trap-ubsan-test.log bash test-infrastructure/vm/vm-run-tests.sh $*"
     ;;
 pageheap)
     # OS-level heap verification (page-granular overflow/UAF detection) for the

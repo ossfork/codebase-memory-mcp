@@ -1074,6 +1074,8 @@ echo '# Personal Rovo guidance' > "$ROVO_INSTRUCTIONS"
 
 # Run install — override platform config dirs so cbm_app_config_dir() and
 # cbm_app_local_dir() resolve to FAKE_HOME paths on all platforms.
+PHASE8_INSTALL_RC=0
+PHASE8_INSTALL_LOG=$(smoke_mktemp_file)
 HOME="$FAKE_HOME" \
   XDG_CONFIG_HOME="$FAKE_HOME/.config" \
   APPDATA="$FAKE_HOME/AppData/Roaming" \
@@ -1081,7 +1083,30 @@ HOME="$FAKE_HOME" \
   KIMI_CODE_HOME="$CUSTOM_KIMI_HOME" \
   CBM_ROO_CONFIG_PATH="$ROO_CFG" \
   PATH="$FAKE_HOME/.local/bin:$PATH" \
-  "$BINARY" install -y 2>&1 || true
+  "$BINARY" install -y > "$PHASE8_INSTALL_LOG" 2>&1 || PHASE8_INSTALL_RC=$?
+cat "$PHASE8_INSTALL_LOG"
+if [[ "$BINARY" == *.exe ]]; then
+  # The managed install itself must SUCCEED on Windows — an install-time
+  # staging/ACL refusal used to scroll past as tolerated noise while the
+  # downstream config assertions kept passing against a previous generation
+  # ("staging transaction open failed (status -3, os 0)" hid a real install
+  # failure class on Administrators-default-owner profiles).
+  if [ "$PHASE8_INSTALL_RC" -ne 0 ]; then
+    echo "FAIL 8-0: managed install exited rc=$PHASE8_INSTALL_RC"
+    exit 1
+  fi
+  PHASE8_CANONICAL="$FAKE_HOME/.local/bin/codebase-memory-mcp.exe"
+  if [ ! -f "$PHASE8_CANONICAL" ]; then
+    echo "FAIL 8-0: canonical launcher missing after managed install"
+    exit 1
+  fi
+  PHASE8_LINKS=$(stat -c %h "$PHASE8_CANONICAL" 2>/dev/null || echo 0)
+  if [ "$PHASE8_LINKS" != "2" ]; then
+    echo "FAIL 8-0: canonical launcher is not an exact two-link file (links=$PHASE8_LINKS)"
+    exit 1
+  fi
+  echo "OK 8-0: managed install committed an exact two-link canonical launcher"
+fi
 
 # Helper for JSON validation (pipe file to python — avoids MSYS2 path translation issues)
 json_get() { cat "$1" 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print($2)" 2>/dev/null || echo ""; }
